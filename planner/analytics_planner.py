@@ -9,59 +9,63 @@ class AnalyticsPlanner:
         self.schema = schema
         self.llm = get_llm()
 
-    # ------------------------------------------------
-    def plan(self, question: str) -> dict:
-        """
-        Generate a schema-safe execution plan.
-        This planner NEVER allows hallucinated columns.
-        """
+    # ---------------------------
+    # Time parser (deterministic)
+    # ---------------------------
+    def extract_time_range(self, question: str):
+        q = question.lower()
 
-        # Create hard-locked schema list
-        schema_keys = list(self.schema.keys())
-        schema_description = "\n".join([f"- {k}" for k in schema_keys])
+        if "last 6 months" in q:
+            return "last 6 months"
+        if "last 3 months" in q or "last quarter" in q:
+            return "last 3 months"
+        if "last year" in q:
+            return "last year"
+        if "this year" in q:
+            return "this year"
+
+        match = re.search(r"\b(20\d{2})\b", q)
+        if match:
+            return match.group(1)
+
+        return None
+
+    # ---------------------------
+    # Planner
+    # ---------------------------
+    def plan(self, question: str) -> dict:
+        schema_description = "\n".join(
+            [f"{k} → {v}" for k, v in self.schema.items()]
+        )
 
         prompt = PLANNER_PROMPT.format(schema=schema_description)
 
         response = self.llm.invoke(
-            prompt + f"\n\nQuestion: {question}\nOutput:"
+            prompt + f"\nQuestion: {question}\nOutput:"
         )
 
         raw = response.content.strip()
+
+        # 🔥 CRITICAL FIX: Remove markdown fences if LLM returned ```json
+        raw = raw.replace("```json", "").replace("```", "").strip()
 
         print("\n===== PLANNER DEBUG =====")
         print(raw)
         print("=========================\n")
 
-        # Remove ```json wrappers if model adds them
-        raw = re.sub(r"```json|```", "", raw).strip()
-
         try:
             plan = json.loads(raw)
-        except Exception:
+        except Exception as e:
+            print("❌ Planner JSON parse failed:", e)
             return {"operation": "unsupported"}
 
-        # ---- Strict validation against schema ----
-        def validate_step(step):
-            for key in ["column", "metric", "group_by", "list_column"]:
-                if key in step and step[key] not in self.schema:
-                    return False
-
-            if "filters" in step:
-                for f in step["filters"]:
-                    if f not in self.schema:
-                        return False
-
-            return True
-
-        # Multi-step
-        if "steps" in plan:
-            for s in plan["steps"]:
-                if not validate_step(s):
-                    return {"operation": "unsupported"}
-            return plan
-
-        # Single-step
-        if not validate_step(plan):
-            return {"operation": "unsupported"}
+        # Attach time if detected
+        time_range = self.extract_time_range(question)
+        if time_range:
+            if "steps" in plan:
+                for step in plan["steps"]:
+                    step["time_range"] = time_range
+            else:
+                plan["time_range"] = time_range
 
         return plan

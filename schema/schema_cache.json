@@ -1,0 +1,16 @@
+{
+  "fingerprint": "ea8a89295ff9ab86915e8d0888dfa985",
+  "schema": {
+    "product_id": "Product ID",
+    "product_name": "Product Name",
+    "vendor_name": "Vendor Name",
+    "plant_name": "Plant Name",
+    "number_of_plants": "Number of Plants",
+    "material_count": "Material Count",
+    "cost": "Cost",
+    "category": "Category",
+    "delivery_lead_time_days": "Delivery Lead Time (Days)",
+    "quality_rating": "Quality Rating",
+    "region": "Region"
+  }
+}
